@@ -6,10 +6,10 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"strconv"
 )
 
-func Write(fileName, employeeName string, timeStamp int64, lat, long float64, location string) error {
+// Write writes XML-encoded data format to WEBP RIFF container.
+func Write(fileName string, v interface{}) error {
 	b, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return err
@@ -21,31 +21,26 @@ func Write(fileName, employeeName string, timeStamp int64, lat, long float64, lo
 	}
 	defer file.Close()
 
-	var employeeEscaped []byte
-	var locationEscaped []byte
+	return encode(file, b, v)
+}
 
-	employeeEscaped = strconv.AppendQuoteToASCII(employeeEscaped, employeeName)
-	locationEscaped = strconv.AppendQuoteToASCII(locationEscaped, location)
-
-	employeeName = string(employeeEscaped)
-	location = string(locationEscaped)
-
-	xmp := Xmpmeta{}
-	p := Profile{
+// WriteXMP writes profile information in XMP format to WEBP RIFF container.
+func WriteXMP(fileName, employeeName string, timeStamp int64, lat, long float64, location string) error {
+	xmp := xmpMeta{}
+	profile := Profile{
 		Name:      employeeName,
 		Timestamp: timeStamp,
 		Location:  location,
 		Lat:       lat,
 		Long:      long,
 	}
+	xmp.RDF.Description.Profile = profile
 
-	xmp.RDF.Description.Profile = p
-
-	return encode(file, b, xmp)
+	return Write(fileName, xmp)
 }
 
 // Refer to https://developers.google.com/speed/webp/docs/riff_container
-
+// encode writes xml to WEBP RIFF container.
 func encode(w io.Writer, b []byte, v interface{}) error {
 
 	var buffer []byte
@@ -58,10 +53,10 @@ func encode(w io.Writer, b []byte, v interface{}) error {
 	chunkOffset := 0
 	chunkID := string(b[chunkOffset : chunkOffset+4])
 	if chunkID != "RIFF" {
-		return InvalidRIFF
+		return ErrInvalidRIFF
 	}
 	if string(b[chunkOffset+8:chunkOffset+12]) != "WEBP" {
-		return InvalidWEBP
+		return ErrInvalidWEBP
 	}
 
 	size := 0
@@ -77,8 +72,16 @@ func encode(w io.Writer, b []byte, v interface{}) error {
 
 	chunkID = string(b[12:16])
 
+	size += 8 + len(content)
+
 	if chunkID != "VP8X" {
-		buffer = make([]byte, chunkOffset+len(content)+26)
+		size += 18
+		if size%2 == 0 {
+			buffer = make([]byte, chunkOffset+len(content)+26)
+		} else {
+			buffer = make([]byte, chunkOffset+len(content)+27)
+		}
+
 		copy(buffer, b)
 		copy(buffer[30:], buffer[12:])
 
@@ -130,10 +133,13 @@ func encode(w io.Writer, b []byte, v interface{}) error {
 		buffer[29] = byte(height >> 16)
 
 		chunkOffset += 18
-		size += 18
 
 	} else {
-		buffer = make([]byte, chunkOffset+len(content)+8)
+		if size%2 == 0 {
+			buffer = make([]byte, chunkOffset+len(content)+8)
+		} else {
+			buffer = make([]byte, chunkOffset+len(content)+9)
+		}
 		copy(buffer, b)
 		buffer[20] = buffer[20] | 0x4
 	}
@@ -154,8 +160,10 @@ func encode(w io.Writer, b []byte, v interface{}) error {
 
 	// XMP Content
 	copy(buffer[chunkOffset:], content)
-
-	size += 8 + len(content)
+	if size%2 != 0 {
+		buffer[len(buffer)-1] = 0x0
+		size++
+	}
 
 	// Update container size
 	buffer[4] = byte(size)

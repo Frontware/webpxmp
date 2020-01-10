@@ -5,60 +5,66 @@ import (
 	"encoding/xml"
 	"io/ioutil"
 	"net/http"
-	"strconv"
 )
 
-func Read(path string) (*Profile, error) {
-	var p *Profile
-	xmp := Xmpmeta{}
-
+// Read parses XML-encoded data inside WEBP RIFF container.
+func Read(path string, v interface{}) error {
 	b, err := ioutil.ReadFile(path)
 	if err == nil {
-		err = decode(b, &xmp)
-		p = &xmp.RDF.Description.Profile
-		return p, err
+		return decode(b, v)
 	}
 
 	resp, err := http.Get(path)
 	if err != nil {
-		return p, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	b, err = ioutil.ReadAll(resp.Body)
 	if err == nil {
-		err = decode(b, &xmp)
-		p = &xmp.RDF.Description.Profile
-		return p, err
+		return decode(b, v)
 	}
 
-	return p, err
+	return err
+}
+
+// ReadXMP returns xml information on profile.
+func ReadXMP(path string) (*Profile, error) {
+	xmp := xmpMeta{}
+	err := Read(path, &xmp)
+	if err != nil {
+		return nil, err
+	}
+
+	profile := xmp.RDF.Description.Profile
+
+	return &profile, nil
 }
 
 // Refer to https://developers.google.com/speed/webp/docs/riff_container
-
-func decode(b []byte, v *Xmpmeta) error {
+// decode reads XML inside WEBP RIFF container.
+func decode(b []byte, v interface{}) error {
 
 	chunkOffset := 0
 	chunkID := string(b[chunkOffset : chunkOffset+4])
 	if chunkID != "RIFF" {
-		return InvalidRIFF
+		return ErrInvalidRIFF
 	}
 	if string(b[chunkOffset+8:chunkOffset+12]) != "WEBP" {
-		return InvalidWEBP
+		return ErrInvalidWEBP
 	}
 	containerSize := 12
 
 	chunkOffset = chunkOffset + containerSize
 	chunkID = string(b[chunkOffset : chunkOffset+4])
 	if chunkID != "VP8X" {
-		return VP8XNotFound
+		return ErrVP8XNotFound
 	}
 	containerSize = int(binary.LittleEndian.Uint32(b[chunkOffset+4:chunkOffset+8])) + 8
 	metadata := b[chunkOffset+8]
 	xmpFlag := metadata & 0x4
 	if xmpFlag != 4 {
-		return XMPNotFound
+		return ErrXMPNotFound
 	}
 
 	chunkOffset = chunkOffset + containerSize
@@ -72,7 +78,7 @@ func decode(b []byte, v *Xmpmeta) error {
 	}
 
 	if chunkID != "XMP " {
-		return XMPNotFound
+		return ErrXMPNotFound
 	}
 
 	content := b[chunkOffset+8 : chunkOffset+containerSize+8]
@@ -81,18 +87,6 @@ func decode(b []byte, v *Xmpmeta) error {
 	if err != nil {
 		return err
 	}
-
-	escapedName, err := strconv.Unquote(v.RDF.Description.Profile.Name)
-	if err != nil {
-		return err
-	}
-	v.RDF.Description.Profile.Name = escapedName
-
-	escapedLocation, err := strconv.Unquote(v.RDF.Description.Profile.Location)
-	if err != nil {
-		return err
-	}
-	v.RDF.Description.Profile.Location = escapedLocation
 
 	return err
 }

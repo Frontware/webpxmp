@@ -2,6 +2,7 @@ package xmp
 
 import "encoding/xml"
 
+// Profile is a basic structure.
 type Profile struct {
 	Text      string  `xml:",chardata"`
 	Name      string  `xml:"name"`
@@ -11,7 +12,8 @@ type Profile struct {
 	Long      float64 `xml:"long"`
 }
 
-type Xmpmeta struct {
+// xmpMeta is a basic XMP structure for profile tagging.
+type xmpMeta struct {
 	XMLName xml.Name `xml:"xmpmeta"`
 	Text    string   `xml:",chardata"`
 	X       string   `xml:"x,attr"`
@@ -22,7 +24,6 @@ type Xmpmeta struct {
 		Description struct {
 			Text    string  `xml:",chardata"`
 			About   string  `xml:"about,attr"`
-			Weladee string  `xml:"weladee,attr"`
 			Profile Profile `xml:"profile"`
 		} `xml:"Description"`
 	} `xml:"RDF"`
